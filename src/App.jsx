@@ -865,92 +865,273 @@ const PetDetail = ({ petId, userId, onBack, onRefreshPets }) => {
 const CalendarScreen = ({ pets }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
+  const [filter, setFilter] = useState("todos");
+
+  // Construir todos los eventos de todos los tipos
   const allEvents = [];
   pets.forEach(pet => {
     const sp = SPECIES_DATA[pet.species];
-    if (!sp) return;
 
-    // Vacunas programadas (próximas dosis)
-    sp.vaccines.forEach(vac => {
-      const applied = (pet.vaccinations || []).filter(v => v.vaccine_name === vac.name).sort((a, b) => new Date(b.date) - new Date(a.date));
-      if (applied.length > 0) {
-        const nextDate = addMonths(applied[0].date, vac.intervalMonths);
-        allEvents.push({ pet, date: nextDate, label: `${pet.name}: ${vac.name}`, icon: "💉", type: "vaccine" });
+    // — Vacunas aplicadas —
+    (pet.vaccinations || []).forEach(v => {
+      allEvents.push({
+        pet, date: new Date(v.date),
+        label: `${pet.name}: ${v.vaccine_name}`,
+        icon: "💉", type: "vacuna",
+        vet: v.vet, detail: v.notes,
+      });
+      // próxima dosis
+      if (v.next_date) {
+        allEvents.push({
+          pet, date: new Date(v.next_date),
+          label: `${pet.name}: Próx. ${v.vaccine_name}`,
+          icon: "💉", type: "vacuna",
+          vet: v.vet, detail: "Próxima dosis programada",
+          isPending: true,
+        });
       }
     });
 
-    // Vacunas aplicadas (fecha real)
-    (pet.vaccinations || []).forEach(v => {
-      allEvents.push({ pet, date: new Date(v.date), label: `${pet.name}: ${v.vaccine_name}`, icon: "💉", type: "vaccine" });
-    });
+    // — Vacunas del calendario automático (próximas dosis calculadas) —
+    if (sp) {
+      sp.vaccines.forEach(vac => {
+        const applied = (pet.vaccinations || [])
+          .filter(v => v.vaccine_name === vac.name)
+          .sort((a, b) => new Date(b.date) - new Date(a.date));
+        if (applied.length > 0 && !applied[0].next_date) {
+          const nextDate = addMonths(applied[0].date, vac.intervalMonths);
+          allEvents.push({
+            pet, date: nextDate,
+            label: `${pet.name}: Próx. ${vac.name}`,
+            icon: "💉", type: "vacuna",
+            detail: "Próxima dosis programada",
+            isPending: true,
+          });
+        }
+      });
+    }
 
-    // Historial médico (controles, enfermedades, procedimientos, etc.)
-    (pet.medical_history || []).forEach(h => {
-      const typeIcons = { vacuna: "💉", enfermedad: "🤒", procedimiento: "🔬", control: "🩺", observacion: "📝", desparasitacion: "🪱" };
+    // — Historial médico completo —
+    const history = pet.medical_history || pet.medicalHistory || [];
+    history.forEach(h => {
+      const typeIcons = {
+        vacuna: "💉", enfermedad: "🤒", procedimiento: "🔬",
+        control: "🩺", desparasitacion: "🪱", observacion: "📝"
+      };
+      const typeColors = {
+        vacuna: "#22c55e", enfermedad: "#ef4444", procedimiento: "#8b5cf6",
+        control: "#3b82f6", desparasitacion: "#06b6d4", observacion: "#f59e0b"
+      };
       allEvents.push({
-        pet,
-        date: new Date(h.date),
+        pet, date: new Date(h.date),
         label: `${pet.name}: ${h.title}`,
         icon: typeIcons[h.type] || "📝",
         type: h.type,
-        detail: h.description,
+        color: typeColors[h.type] || "#9e8c7a",
         vet: h.vet,
+        detail: h.description,
       });
     });
   });
-  const year = currentDate.getFullYear(), month = currentDate.getMonth();
-  const firstDay = new Date(year, month, 1).getDay(), daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Filtrar por tipo
+  const FILTERS = [
+    { id: "todos", label: "Todos", icon: "📅" },
+    { id: "vacuna", label: "Vacunas", icon: "💉" },
+    { id: "control", label: "Controles", icon: "🩺" },
+    { id: "enfermedad", label: "Enfermedades", icon: "🤒" },
+    { id: "procedimiento", label: "Procedimientos", icon: "🔬" },
+    { id: "desparasitacion", label: "Desparasitación", icon: "🪱" },
+    { id: "observacion", label: "Observaciones", icon: "📝" },
+  ];
+
+  const filteredEvents = filter === "todos" ? allEvents : allEvents.filter(e => e.type === filter);
+
+  // Calendario
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
   const today = new Date();
+
   const eventDays = {};
-  allEvents.forEach(ev => { const d = new Date(ev.date); if (d.getFullYear() === year && d.getMonth() === month) { const k = d.getDate(); if (!eventDays[k]) eventDays[k] = []; eventDays[k].push(ev); } });
-  const upcoming = allEvents.filter(e => daysUntil(e.date) >= 0 && daysUntil(e.date) <= 60).sort((a, b) => new Date(a.date) - new Date(b.date));
+  filteredEvents.forEach(ev => {
+    const d = new Date(ev.date);
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      const k = d.getDate();
+      if (!eventDays[k]) eventDays[k] = [];
+      eventDays[k].push(ev);
+    }
+  });
+
+  const selectedEvents = selectedDay ? (eventDays[selectedDay] || []) : [];
+
+  const upcoming = filteredEvents
+    .filter(e => daysUntil(e.date) >= 0 && daysUntil(e.date) <= 60)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const typeColors = {
+    vacuna: "#22c55e", enfermedad: "#ef4444", procedimiento: "#8b5cf6",
+    control: "#3b82f6", desparasitacion: "#06b6d4", observacion: "#f59e0b"
+  };
 
   return (
     <div>
-      <div className="page-header"><h1 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 700 }}>📅 Calendario</h1></div>
+      <div className="page-header">
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 700 }}>📅 Calendario</h1>
+        <p style={{ color: "var(--text3)", fontSize: 13, marginTop: 2 }}>{allEvents.length} eventos registrados</p>
+      </div>
+
       <div className="page-content">
+        {/* Filtros */}
+        <div style={{ overflowX: "auto", marginBottom: 16, paddingBottom: 4, scrollbarWidth: "none" }}>
+          <div style={{ display: "flex", gap: 8, minWidth: "max-content" }}>
+            {FILTERS.map(f => (
+              <button key={f.id} onClick={() => { setFilter(f.id); setSelectedDay(null); }}
+                style={{
+                  padding: "7px 14px", borderRadius: 50, border: "1.5px solid",
+                  fontFamily: "var(--font)", fontWeight: 700, fontSize: 12,
+                  cursor: "pointer", transition: "all .2s", whiteSpace: "nowrap",
+                  background: filter === f.id ? "var(--primary)" : "white",
+                  borderColor: filter === f.id ? "var(--primary)" : "var(--border)",
+                  color: filter === f.id ? "white" : "var(--text2)",
+                }}>
+                {f.icon} {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Calendario */}
         <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+          {/* Navegación de mes */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-            <button className="btn-ghost" onClick={() => setCurrentDate(new Date(year, month - 1, 1))}>‹</button>
-            <h2 style={{ fontWeight: 800, fontSize: 18, textTransform: "capitalize" }}>{currentDate.toLocaleDateString("es-CL", { month: "long", year: "numeric" })}</h2>
-            <button className="btn-ghost" onClick={() => setCurrentDate(new Date(year, month + 1, 1))}>›</button>
+            <button className="btn-ghost" onClick={() => { setCurrentDate(new Date(year, month - 1, 1)); setSelectedDay(null); }}>‹</button>
+            <h2 style={{ fontWeight: 800, fontSize: 18, textTransform: "capitalize" }}>
+              {currentDate.toLocaleDateString("es-CL", { month: "long", year: "numeric" })}
+            </h2>
+            <button className="btn-ghost" onClick={() => { setCurrentDate(new Date(year, month + 1, 1)); setSelectedDay(null); }}>›</button>
           </div>
+
+          {/* Días de la semana */}
           <div className="cal-grid" style={{ marginBottom: 8 }}>
-            {["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sa"].map(d => <div key={d} style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "var(--text3)", padding: "4px 0" }}>{d}</div>)}
+            {["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sa"].map(d => (
+              <div key={d} style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "var(--text3)", padding: "4px 0" }}>{d}</div>
+            ))}
           </div>
+
+          {/* Días del mes */}
           <div className="cal-grid">
             {Array.from({ length: firstDay }).map((_, i) => <div key={`e-${i}`} className="cal-day other-month" />)}
             {Array.from({ length: daysInMonth }).map((_, i) => {
               const day = i + 1;
               const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
-              return <div key={day} className={`cal-day${isToday ? " today" : ""}${eventDays[day] ? " has-event" : ""}`} style={{ background: selectedDay === day && !isToday ? "var(--primary-light)" : undefined, fontWeight: (isToday || selectedDay === day) ? 800 : 600 }} onClick={() => setSelectedDay(selectedDay === day ? null : day)}>{day}</div>;
+              const isSelected = selectedDay === day;
+              const dayEvents = eventDays[day] || [];
+              const hasEvent = dayEvents.length > 0;
+              // Color del punto según tipo de evento
+              const dotColor = hasEvent ? (typeColors[dayEvents[0].type] || "var(--accent)") : null;
+              return (
+                <div key={day}
+                  className={`cal-day${isToday ? " today" : ""}`}
+                  style={{
+                    background: isSelected && !isToday ? "var(--primary-light)" : undefined,
+                    color: isSelected && !isToday ? "var(--primary)" : undefined,
+                    fontWeight: (isToday || isSelected) ? 800 : 600,
+                    border: isSelected ? "2px solid var(--primary)" : "2px solid transparent",
+                    borderRadius: 10,
+                  }}
+                  onClick={() => setSelectedDay(isSelected ? null : day)}>
+                  {day}
+                  {hasEvent && (
+                    <span style={{ position: "absolute", bottom: 3, width: 6, height: 6, borderRadius: "50%", background: dotColor }} />
+                  )}
+                </div>
+              );
             })}
           </div>
+
+          {/* Leyenda de colores */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+            {Object.entries(typeColors).map(([type, color]) => (
+              <div key={type} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
+                <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600, textTransform: "capitalize" }}>{type}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Detalle del día seleccionado */}
           {selectedDay && (
-            <div style={{ marginTop: 16, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12 }}>
-              <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>📅 {selectedDay} de {currentDate.toLocaleDateString("es-CL", { month: "long" })}</p>
-              {(eventDays[selectedDay] || []).length === 0 
-                ? <p style={{ fontSize: 13, color: "var(--text3)" }}>Sin eventos este día</p> 
-                : (eventDays[selectedDay] || []).map((ev, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
-                      {ev.icon || "📅"}
+            <div style={{ marginTop: 16, padding: "14px", background: "var(--surface2)", borderRadius: 12 }}>
+              <p style={{ fontWeight: 800, fontSize: 14, marginBottom: 10, color: "var(--text)" }}>
+                📅 {selectedDay} de {currentDate.toLocaleDateString("es-CL", { month: "long", year: "numeric" })}
+                <span style={{ marginLeft: 8, fontSize: 12, color: "var(--text3)", fontWeight: 600 }}>
+                  {selectedEvents.length} evento{selectedEvents.length !== 1 ? "s" : ""}
+                </span>
+              </p>
+              {selectedEvents.length === 0 ? (
+                <p style={{ fontSize: 13, color: "var(--text3)" }}>Sin eventos este día</p>
+              ) : (
+                selectedEvents.map((ev, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "flex-start", gap: 10,
+                    padding: "10px 0",
+                    borderBottom: i < selectedEvents.length - 1 ? "1px solid var(--border)" : "none"
+                  }}>
+                    <div style={{
+                      width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+                      background: `${ev.color || typeColors[ev.type] || "#9e8c7a"}20`,
+                      border: `2px solid ${ev.color || typeColors[ev.type] || "#9e8c7a"}`,
+                      display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18
+                    }}>
+                      {ev.icon}
                     </div>
                     <div style={{ flex: 1 }}>
-                      <p style={{ fontSize: 14, fontWeight: 700 }}>{ev.label}</p>
-                      {ev.vet && <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>🏥 {ev.vet}</p>}
-                      {ev.detail && <p style={{ fontSize: 12, color: "var(--text2)", marginTop: 2, lineHeight: 1.5 }}>{ev.detail}</p>}
-                      <p style={{ fontSize: 11, color: "var(--primary)", fontWeight: 600, marginTop: 3, textTransform: "capitalize" }}>{ev.type}</p>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{ev.label}</p>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: ev.color || typeColors[ev.type] || "var(--text3)", textTransform: "capitalize", marginTop: 2 }}>
+                        {ev.isPending ? "⏰ Pendiente" : ev.type}
+                      </p>
+                      {ev.vet && <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 3 }}>🏥 {ev.vet}</p>}
+                      {ev.detail && <p style={{ fontSize: 12, color: "var(--text2)", marginTop: 3, lineHeight: 1.5 }}>{ev.detail}</p>}
                     </div>
                   </div>
                 ))
-              }
+              )}
             </div>
           )}
         </div>
+
+        {/* Próximos 60 días */}
         <h2 className="section-title">⏰ Próximos 60 días</h2>
-        {upcoming.length === 0 ? <div className="empty-state card"><div className="empty-icon">🎉</div><div className="empty-title">¡Todo al día!</div><div className="empty-sub">No hay eventos pendientes en los próximos 60 días</div></div>
-          : upcoming.map((ev, i) => { const d = daysUntil(ev.date); return <div key={i} className="alert-item" style={{ borderLeftColor: getUrgencyColor(d) }}><Avatar pet={ev.pet} size={40} /><div style={{ flex: 1 }}><p style={{ fontWeight: 700, fontSize: 14 }}>{ev.label}</p><p style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>📅 {formatDate(ev.date)}</p></div><span className="badge" style={{ background: `${getUrgencyColor(d)}20`, color: getUrgencyColor(d), fontWeight: 800 }}>{d === 0 ? "Hoy" : `${d}d`}</span></div>; })}
+        {upcoming.length === 0 ? (
+          <div className="empty-state card">
+            <div className="empty-icon">🎉</div>
+            <div className="empty-title">¡Todo al día!</div>
+            <div className="empty-sub">No hay eventos pendientes en los próximos 60 días</div>
+          </div>
+        ) : (
+          upcoming.map((ev, i) => {
+            const d = daysUntil(ev.date);
+            const color = ev.color || typeColors[ev.type] || getUrgencyColor(d);
+            return (
+              <div key={i} className="alert-item" style={{ borderLeftColor: color, animationDelay: `${i * .04}s` }}>
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: `${color}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+                  {ev.icon}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontWeight: 700, fontSize: 14 }}>{ev.label}</p>
+                  {ev.vet && <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 1 }}>🏥 {ev.vet}</p>}
+                  {ev.detail && <p style={{ fontSize: 12, color: "var(--text2)", marginTop: 1 }}>{ev.detail}</p>}
+                  <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>📅 {formatDate(ev.date)}</p>
+                </div>
+                <span className="badge" style={{ background: `${getUrgencyColor(d)}20`, color: getUrgencyColor(d), fontWeight: 800, fontSize: 12, whiteSpace: "nowrap" }}>
+                  {d === 0 ? "Hoy" : `${d}d`}
+                </span>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
