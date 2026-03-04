@@ -869,12 +869,33 @@ const CalendarScreen = ({ pets }) => {
   pets.forEach(pet => {
     const sp = SPECIES_DATA[pet.species];
     if (!sp) return;
+
+    // Vacunas programadas (próximas dosis)
     sp.vaccines.forEach(vac => {
       const applied = (pet.vaccinations || []).filter(v => v.vaccine_name === vac.name).sort((a, b) => new Date(b.date) - new Date(a.date));
       if (applied.length > 0) {
         const nextDate = addMonths(applied[0].date, vac.intervalMonths);
-        allEvents.push({ pet, date: nextDate, label: `${pet.name}: ${vac.name}` });
+        allEvents.push({ pet, date: nextDate, label: `${pet.name}: ${vac.name}`, icon: "💉", type: "vaccine" });
       }
+    });
+
+    // Vacunas aplicadas (fecha real)
+    (pet.vaccinations || []).forEach(v => {
+      allEvents.push({ pet, date: new Date(v.date), label: `${pet.name}: ${v.vaccine_name}`, icon: "💉", type: "vaccine" });
+    });
+
+    // Historial médico (controles, enfermedades, procedimientos, etc.)
+    (pet.medical_history || []).forEach(h => {
+      const typeIcons = { vacuna: "💉", enfermedad: "🤒", procedimiento: "🔬", control: "🩺", observacion: "📝", desparasitacion: "🪱" };
+      allEvents.push({
+        pet,
+        date: new Date(h.date),
+        label: `${pet.name}: ${h.title}`,
+        icon: typeIcons[h.type] || "📝",
+        type: h.type,
+        detail: h.description,
+        vet: h.vet,
+      });
     });
   });
   const year = currentDate.getFullYear(), month = currentDate.getMonth();
@@ -908,7 +929,22 @@ const CalendarScreen = ({ pets }) => {
           {selectedDay && (
             <div style={{ marginTop: 16, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12 }}>
               <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>📅 {selectedDay} de {currentDate.toLocaleDateString("es-CL", { month: "long" })}</p>
-              {(eventDays[selectedDay] || []).length === 0 ? <p style={{ fontSize: 13, color: "var(--text3)" }}>Sin eventos este día</p> : (eventDays[selectedDay] || []).map((ev, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}><Avatar pet={ev.pet} size={28} /><p style={{ fontSize: 13, fontWeight: 600 }}>{ev.label}</p></div>)}
+              {(eventDays[selectedDay] || []).length === 0 
+                ? <p style={{ fontSize: 13, color: "var(--text3)" }}>Sin eventos este día</p> 
+                : (eventDays[selectedDay] || []).map((ev, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
+                      {ev.icon || "📅"}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 14, fontWeight: 700 }}>{ev.label}</p>
+                      {ev.vet && <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>🏥 {ev.vet}</p>}
+                      {ev.detail && <p style={{ fontSize: 12, color: "var(--text2)", marginTop: 2, lineHeight: 1.5 }}>{ev.detail}</p>}
+                      <p style={{ fontSize: 11, color: "var(--primary)", fontWeight: 600, marginTop: 3, textTransform: "capitalize" }}>{ev.type}</p>
+                    </div>
+                  </div>
+                ))
+              }
             </div>
           )}
         </div>
