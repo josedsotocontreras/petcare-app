@@ -1053,7 +1053,7 @@ export default function App() {
       <div className="app-wrap">
         {selectedPetId ? (
           <div className="anim-fadein">
-            <PetDetail petId={selectedPetId} userId={user.id} onBack={() => setSelectedPetId(null)} onRefreshPets={() => loadPets(user.id)} />
+            <PetDetail petId={selectedPetId} userId={user.id} onBack={() => { setSelectedPetId(null); loadPets(user.id); }} onRefreshPets={() =>loadPets(user.id)}  />
           </div>
         ) : (
           <div className="anim-fadein">
@@ -1080,7 +1080,7 @@ export default function App() {
         )}
 
         {showAddPet && (
-          <PetForm userId={user.id} onSave={() => { loadPets(user.id); setShowAddPet(false); }} onClose={() => setShowAddPet(false)} />
+          <PetForm userId={user.id} onSave={() => { loadPets(user.id); setShowAddPet(false); }} onClose={() => { loadPets(user.id); setShowAddPet(false); }} />
         )}
       </div>
     </>
